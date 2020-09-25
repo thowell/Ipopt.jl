@@ -1,4 +1,5 @@
-using Ipopt
+# using Ipopt
+include(joinpath(pwd(),"src/Ipopt.jl"))
 using Test
 
 # hs071
@@ -10,6 +11,7 @@ using Test
 # End at (1.000..., 4.743..., 3.821..., 1.379...)
 
 function eval_f(x::Vector{Float64})
+  x_global .= x
   return x[1] * x[4] * (x[1] + x[2] + x[3]) + x[3]
 end
 
@@ -107,26 +109,37 @@ g_U = [2.0e19, 40.0]
 prob = createProblem(n, x_L, x_U, m, g_L, g_U, 8, 10,
                      eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
 
+addOption(prob,"hessian_approximation","limited-memory")
+
 prob.x = [1.0, 5.0, 5.0, 1.0]
 solvestat = solveProblem(prob)
-
-@test Ipopt.ApplicationReturnStatus[solvestat] == :Solve_Succeeded
-@test prob.x[1] ≈ 1.0000000000000000 atol=1e-5
-@test prob.x[2] ≈ 4.7429996418092970 atol=1e-5
-@test prob.x[3] ≈ 3.8211499817883077 atol=1e-5
-@test prob.x[4] ≈ 1.3794082897556983 atol=1e-5
-@test prob.obj_val ≈ 17.014017145179164 atol=1e-5
 
 # This tests callbacks.
 function intermediate(alg_mod::Int, iter_count::Int,
   obj_value::Float64, inf_pr::Float64, inf_du::Float64, mu::Float64,
   d_norm::Float64, regularization_size::Float64, alpha_du::Float64, alpha_pr::Float64,
   ls_trials::Int)
-  return iter_count < 1  # Interrupts after one iteration.
+  if mu != mu_prev
+    println("-mu difference-")
+    println("-AL update-")
+    λ_global .+= 1/mu_prev*x_global[1:2]
+    global mu_prev = mu
+  end
+  println("CALLBACK")
+  println("   mu_prev: $(mu_prev)")
+  println("   mu: $(mu)")
+  println("   x: $(x_global)")
+  return true #iter_count < 1  # Interrupts after one iteration.
 end
 
 setIntermediateCallback(prob, intermediate)
 
+global x_global = zeros(4)
+global λ_global = zeros(2)
+global mu_prev = 0.1
+
+prob.x .= rand(4)
 solvestat = solveProblem(prob)
 
-@test Ipopt.ApplicationReturnStatus[solvestat] == :User_Requested_Stop
+λ_global
+# @test Ipopt.ApplicationReturnStatus[solvestat] == :User_Requested_Stop
